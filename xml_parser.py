@@ -1,20 +1,17 @@
 import sqlite3
 import xml.etree.ElementTree as ET
+from loguru import logger
+
 mytree = ET.parse('feed-example.xml')
 myroot = mytree.getroot()
 
+logger.add("special.log", filter=lambda record: "special" in record["extra"])
+logger.bind(special=True).info("------------------------------------------------------------------------------------")
+
+
 def replacing(column_name):
-    if '-' in column_name:
+    return column_name.replace('-', '_', 3)
 
-        return column_name.replace('-', '_', 3)
-    else:
-        return column_name
-
-
-cnt = 1
-for x in myroot.findall('offer'):
-     cnt += 1
-print(cnt)
 
 try:
     sqliteConnection = sqlite3.connect('xml_parser.db')
@@ -60,65 +57,60 @@ try:
                                     latitude DOUBLE,
                                     longitude DOUBLE,
                                     metro CHAR,
+                                    name CHAR,
                                     time_on_foot INT,
+                                    time_on_transport INT,
                                     price INT,
                                     area DOUBLE,
                                     living_space DOUBLE,
                                     kitchen_space DOUBLE
                                     );'''
     cursor = sqliteConnection.cursor()
-    print("Database Successfully Connected to SQLite")
+    logger.bind(special=True).info("Database Successfully Connected to SQLite")
     cursor.execute(sqlite_drop_table_query)
     cursor.execute(sqlite_create_table_query)
-    print("SQLite table created")
+    logger.bind(special=True).info("SQLite table created")
     sqliteConnection.commit()
-    #columns names
+    # columns names
     names = list(map(lambda x: x[0], sqliteConnection.execute('select * from objects').description))
-
-    for i in range(1, cnt):
-        print(i)
+    for i in range(1, len(myroot)):
+        logger.debug(i)
         values = []
         columns = []
         for x in myroot[i]:
-            if replacing(x.tag) in names:
-                if replacing(x.tag) == 'location':
-                    for j in range(0, 9):
-                        values.append(x[j].text)
-                        columns.append(replacing(x[j].tag))
-
-                if replacing(x.tag) == 'price':
+            _tag = replacing(x.tag)
+            if _tag in names:
+                if _tag in ['price', 'area', 'living_space', 'kitchen_space']:
                     values.append(x[0].text)
-                    columns.append(replacing(x.tag))
-                if replacing(x.tag) == 'area':
-                    values.append(x[0].text)
-                    columns.append(replacing(x.tag))
-                if replacing(x.tag) == 'living_space':
-                    values.append(x[0].text)
-                    columns.append(replacing(x.tag))
-                if replacing(x.tag) == 'kitchen_space':
-                    values.append(x[0].text)
-                    columns.append(replacing(x.tag))
+                    columns.append(_tag)
+                if _tag == 'location':
+                    for j in range(0, 10):
+                        if x[j].tag == 'metro':
+                            for metro_info in x[j]:
+                                values.append(metro_info.text)
+                                columns.append(replacing(metro_info.tag))
+                        else:
+                            values.append(x[j].text)
+                            columns.append(replacing(x[j].tag))
                 else:
                     values.append(x.text)
-                    columns.append(replacing(x.tag))
+                    columns.append(_tag)
 
         sqlite_insert_query = "INSERT INTO objects(" + ', '.join(columns) + \
-        ") VALUES(" + ', '.join(str(values).replace('[', '', 2).replace(']', '', 2).split(sep=',')) + ")"
+                              ") VALUES(" + ', '.join(
+            str(values).replace('[', '', 2).replace(']', '', 2).split(sep=',')) + ")"
 
-        entiries = values
-        print(sqlite_insert_query)
+        logger.bind(special=True).info("insert query {}".format(sqlite_insert_query))
         count = cursor.execute(sqlite_insert_query)
         sqliteConnection.commit()
-        print("Record inserted successfully into SqliteDb_developers table ", cursor.rowcount)
+        logger.bind(special=True).info(
+            "Record inserted successfully into SqliteDb_developers table {}".format(cursor.rowcount))
 
     cursor.close()
 
 except sqlite3.Error as error:
-    print("Error while connecting to sqlite", error)
+    logger.bind(special=True).error("Error while connecting to sqlite{}".format(error))
 finally:
     if sqliteConnection:
         sqliteConnection.close()
-        print("The SQLite connection is closed")
-
-
-
+        logger.bind(special=True).info("The SQLite connection is closed")
