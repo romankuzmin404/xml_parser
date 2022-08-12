@@ -63,8 +63,7 @@ class ParserXMLtoSQlite():
                                                     parking INT,
                                                     ceiling_height DOUBLE,
                                                     nmarket_complex_id INT,
-                                                    nmarket_building_id INT,
-                                                    location CHAR,
+                                                    nmarket_building_id INT,                                                
                                                     country CHAR,
                                                     region CHAR,
                                                     district CHAR,
@@ -75,7 +74,6 @@ class ParserXMLtoSQlite():
                                                     apartment INT,
                                                     latitude DOUBLE,
                                                     longitude DOUBLE,
-                                                    metro CHAR,
                                                     name CHAR,
                                                     time_on_foot INT,
                                                     time_on_transport INT,
@@ -95,43 +93,43 @@ class ParserXMLtoSQlite():
         myroot = mytree.getroot()
         return myroot
 
-    def get_names(self):
+    def get_names(self, sqliteConnection):
         names = list(map(lambda x: x[0], sqliteConnection.execute('select * from {}'.format(self.table_name)).description))
         return names
 
-    def tag_parsing(self, root, names):
-        # parse
-        for i in range(1, len(root)):
-            logger.debug(i)
+    def tag_parsing(self, root, column_names):
+        record_cnt = 1
+        for offer in root[1:]:
+            # parse
             values = CustomList()
             columns = CustomList(need_replacing=True)
-            for x in myroot[i]:
-                if x.tag in names:
-                    if x.tag in ['price', 'area', 'living_space', 'kitchen_space']:
-                        values.append(x[0].text)
-                        columns.append(x.tag)
-                    if x.tag == 'location':
-                        for j in range(0, 10):
-                            if x[j].tag == 'metro':
-                                for metro_info in x[j]:
-                                    values.append(metro_info.text)
-                                    columns.append(metro_info.tag)
+            for attribute in offer:
+                _attribute = attribute.tag.replace('-', '_', 3)
+                if _attribute in 'location'.join(column_names):
+                    if _attribute in ['price', 'area', 'living_space', 'kitchen_space']:
+                        values.append(attribute[0].text)
+                        columns.append(attribute.tag)
+                    if _attribute == 'location':
+                        for location_atribute in attribute:
+                            if location_atribute.tag == 'metro':
+                                for metro in location_atribute:
+                                    values.append(metro.text)
+                                    columns.append(metro.tag)
                             else:
-                                values.append(x[j].text)
-                                columns.append(x[j].tag)
+                                values.append(location_atribute.text)
+                                columns.append(location_atribute.tag)
                     else:
-                        values.append(x.text)
-                        columns.append(x.tag)
-
+                        values.append(attribute.text)
+                        columns.append(_attribute)
             cursor = sqliteConnection.cursor()
             sqlite_insert_query = "INSERT INTO objects(" + ', '.join(columns) + \
                                   ") VALUES(" + ', '.join(str(values).replace('[', '', 2).replace(']', '', 2).split(sep=',')) + ")"
-
             logger.bind(special=True).info("insert query {}".format(sqlite_insert_query))
-            count = cursor.execute(sqlite_insert_query)
+            cursor = cursor.execute(sqlite_insert_query)
             sqliteConnection.commit()
-            logger.bind(special=True).info("Record inserted successfully into SqliteDb_developers table {}".format(cursor.rowcount))
 
+            logger.bind(special=True).info("Record inserted successfully into SqliteDb_developers table {}".format(record_cnt))
+            record_cnt += 1
         cursor.close()
 
 # logger
@@ -147,11 +145,16 @@ try:
     # init root
     myroot = parser.root_init()
     # names of columns
-    names = parser.get_names()
+    names = parser.get_names(sqliteConnection)
     # parse from root
     parser.tag_parsing(myroot, names)
+
+
+
 
 except sqlite3.Error as error:
     logger.bind(special=True).error("Error while connecting to sqlite{}".format(error))
 finally:
     parser.connection_close(sqliteConnection)
+
+
