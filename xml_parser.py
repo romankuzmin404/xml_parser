@@ -2,6 +2,13 @@ import sqlite3
 import xml.etree.ElementTree as ET
 from loguru import logger
 
+class CustomList(list):
+    def __init__(self, seq=(), need_replacing: bool = False):
+        self.need_replacing = need_replacing
+        super().__init__(seq)
+    def append(self, obj):
+        obj = obj if not self.need_replacing else obj.replace('-', '_', 3)
+        super().append(obj)
 
 class ParserXMLtoSQlite():
     """Class parser from XML to SQlite"""
@@ -11,7 +18,7 @@ class ParserXMLtoSQlite():
     def __init__(self, source_xml, target_db):
         self.source_xml = source_xml
         self.target_db = target_db
-
+        self.table_name = ''
     # connection to db
     def connection_db(self):
         sqliteConnection = sqlite3.connect(self.target_db)
@@ -25,6 +32,7 @@ class ParserXMLtoSQlite():
 
     # create table
     def create_db(self, sqliteConnection, table_name):
+        self.table_name = table_name
         cursor = sqliteConnection.cursor()
         sqlite_drop_table_query = "DROP TABLE IF EXISTS {}".format(table_name)
         sqlite_create_table_query = '''CREATE TABLE {} (
@@ -87,37 +95,33 @@ class ParserXMLtoSQlite():
         myroot = mytree.getroot()
         return myroot
 
-    def get_names(self, table_name):
-        names = list(map(lambda x: x[0], sqliteConnection.execute('select * from {}'.format(table_name)).description))
+    def get_names(self):
+        names = list(map(lambda x: x[0], sqliteConnection.execute('select * from {}'.format(self.table_name)).description))
         return names
 
     def tag_parsing(self, root, names):
-        # function replacing
-        def replacing(column_name):
-            return column_name.replace('-', '_', 3)
         # parse
         for i in range(1, len(root)):
             logger.debug(i)
-            values = []
-            columns = []
+            values = CustomList()
+            columns = CustomList(need_replacing=True)
             for x in myroot[i]:
-                _tag = replacing(x.tag)
-                if _tag in names:
-                    if _tag in ['price', 'area', 'living_space', 'kitchen_space']:
+                if x.tag in names:
+                    if x.tag in ['price', 'area', 'living_space', 'kitchen_space']:
                         values.append(x[0].text)
-                        columns.append(_tag)
-                    if _tag == 'location':
+                        columns.append(x.tag)
+                    if x.tag == 'location':
                         for j in range(0, 10):
                             if x[j].tag == 'metro':
                                 for metro_info in x[j]:
                                     values.append(metro_info.text)
-                                    columns.append(replacing(metro_info.tag))
+                                    columns.append(metro_info.tag)
                             else:
                                 values.append(x[j].text)
-                                columns.append(replacing(x[j].tag))
+                                columns.append(x[j].tag)
                     else:
                         values.append(x.text)
-                        columns.append(_tag)
+                        columns.append(x.tag)
 
             cursor = sqliteConnection.cursor()
             sqlite_insert_query = "INSERT INTO objects(" + ', '.join(columns) + \
@@ -133,17 +137,17 @@ class ParserXMLtoSQlite():
 # logger
 logger.add("special.log", filter=lambda record: "special" in record["extra"])
 logger.bind(special=True).info("------------------------------------------------------------------------------------")
-# create an object of class
+# create an object of class ParserXMLtoSQlite with name source xml and target db
 parser = ParserXMLtoSQlite('feed-example.xml', "xml_parser.db")
 try:
     # connection to db
     sqliteConnection = parser.connection_db()
-    # create table
+    # create table with name
     parser.create_db(sqliteConnection, 'objects')
     # init root
     myroot = parser.root_init()
     # names of columns
-    names = parser.get_names('objects')
+    names = parser.get_names()
     # parse from root
     parser.tag_parsing(myroot, names)
 
